@@ -26,6 +26,9 @@ final class AppModel: ObservableObject {
     private static let logger = Logger(subsystem: "com.youjianzhushou.app", category: "Actions")
     static let shared = AppModel()
     @Published var section: AppSection = .files
+    @Published var sidebarVisible = true
+    @Published var inspectorVisible = true
+    @Published var templateToEdit: FileTemplate?
     @Published var settings: AppSettings {
         didSet { persist() }
     }
@@ -243,31 +246,10 @@ final class AppModel: ObservableObject {
     }
 
     func createFile(_ template: FileTemplate, in directory: URL) {
-        NSApp.activate(ignoringOtherApps: true)
-        let alert = NSAlert()
-        alert.messageText = "新建\(template.name)"
-        alert.informativeText = "保存到：\(directory.path)\n如果文件已存在，会自动在名称后添加序号。"
-        alert.addButton(withTitle: "创建")
-        alert.addButton(withTitle: "取消")
-        let suffix = template.fileExtension.isEmpty ? "" : ".\(template.fileExtension)"
-        let field = NSTextField(string: "未命名\(suffix)")
-        field.frame = NSRect(x: 0, y: 0, width: 340, height: 26)
-        alert.accessoryView = field
-        alert.window.initialFirstResponder = field
-        while alert.runModal() == .alertFirstButtonReturn {
-            do {
-                let url = try FileCreator.create(template: template, named: field.stringValue, in: directory)
-                if settings.revealAfterCreation { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-                notify("已创建 \(url.lastPathComponent)")
-                return
-            } catch let error as FileCreationError where error == .invalidName || error == .nameTooLong {
-                alert.informativeText = "\(error.localizedDescription)\n保存到：\(directory.path)"
-                field.selectText(nil)
-            } catch {
-                errorMessage = error.localizedDescription
-                return
-            }
-        }
+        let panel = FileCreationPanel(template: template, directory: directory)
+        guard let url = panel.runModal() else { return }
+        if settings.revealAfterCreation { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+        notify("已创建 \(url.lastPathComponent)")
     }
 
     func addMonitoredFolder() {

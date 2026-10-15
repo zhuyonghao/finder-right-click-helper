@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import OSLog
+import FinderHelperCore
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -49,18 +50,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if mainWindow == nil {
             let content = ContentView()
                 .environmentObject(AppModel.shared)
-                .frame(minWidth: 1030, minHeight: 680)
-                .tint(Theme.accent)
-                .preferredColorScheme(.light)
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1160, height: 780),
+                .frame(minWidth: 860, minHeight: 560)
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 720),
                                   styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                                   backing: .buffered, defer: false)
-            window.title = "右键助手"
             window.identifier = NSUserInterfaceItemIdentifier("main")
-            window.titleVisibility = .hidden
-            window.titlebarAppearsTransparent = true
+            window.titleVisibility = .visible
+            window.toolbarStyle = .unified
+            window.titlebarSeparatorStyle = .automatic
             window.isReleasedWhenClosed = false
-            window.minSize = NSSize(width: 1030, height: 680)
+            window.minSize = NSSize(width: 860, height: 560)
             window.contentView = NSHostingView(rootView: content)
             window.center()
             window.setFrameAutosaveName("FinderHelperMainWindow")
@@ -82,7 +81,20 @@ struct FinderHelperApp: App {
         // for direct app launches, reopen events, or explicit settings requests.
         Settings { EmptyView() }
         .commands {
-            CommandGroup(replacing: .newItem) { }
+            CommandGroup(replacing: .newItem) {
+                Button("添加文件模板…") {
+                    AppModel.shared.section = .files
+                    AppModel.shared.showSettingsWindow?()
+                    AppModel.shared.templateToEdit = FileTemplate(name: "", fileExtension: "txt", iconName: "doc.text")
+                }
+                .keyboardShortcut("n")
+                Button("导入模板…") {
+                    AppModel.shared.section = .files
+                    AppModel.shared.showSettingsWindow?()
+                    AppModel.shared.importTemplate()
+                }
+                .keyboardShortcut("o")
+            }
             CommandGroup(replacing: .appSettings) {
                 Button("菜单设置…") {
                     AppModel.shared.section = .menu

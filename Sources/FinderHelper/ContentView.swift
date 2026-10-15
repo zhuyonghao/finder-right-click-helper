@@ -3,21 +3,21 @@ import SwiftUI
 import FinderHelperCore
 
 enum Theme {
-    static let accent = Color(red: 0.91, green: 0.38, blue: 0.19)
-    static let ink = Color(red: 0.19, green: 0.22, blue: 0.25)
-    static let muted = Color(red: 0.52, green: 0.54, blue: 0.57)
-    static let canvas = Color(red: 0.975, green: 0.972, blue: 0.963)
-    static let line = Color.black.opacity(0.065)
-    static let green = Color(red: 0.22, green: 0.52, blue: 0.38)
+    static let accent = Color.accentColor
+    static let ink = Color.primary
+    static let muted = Color.secondary
+    static let canvas = Color(nsColor: .windowBackgroundColor)
+    static let surface = Color(nsColor: .controlBackgroundColor)
+    static let line = Color(nsColor: .separatorColor).opacity(0.5)
+    static let green = Color.green
 
     static func color(for ext: String) -> Color {
         switch ext.lowercased() {
-        case "md": return Color(red: 0.35, green: 0.45, blue: 0.73)
-        case "json", "yaml", "yml": return Color(red: 0.73, green: 0.52, blue: 0.20)
-        case "html", "swift": return accent
-        case "py": return Color(red: 0.29, green: 0.56, blue: 0.65)
-        case "css": return Color(red: 0.58, green: 0.42, blue: 0.72)
-        default: return green
+        case "md": return .indigo
+        case "json", "yaml", "yml", "html", "swift": return .orange
+        case "py": return .blue
+        case "css": return .purple
+        default: return .green
         }
     }
 }
@@ -25,151 +25,180 @@ enum Theme {
 struct ContentView: View {
     @EnvironmentObject private var model: AppModel
 
+    private var columnVisibility: Binding<NavigationSplitViewVisibility> {
+        Binding(get: { model.sidebarVisible ? .all : .detailOnly },
+                set: { model.sidebarVisible = $0 != .detailOnly })
+    }
+
+    private var selection: Binding<AppSection?> {
+        Binding(get: { model.section }, set: { if let section = $0 { model.section = section } })
+    }
+
     var body: some View {
-        HStack(spacing: 0) {
-            sidebar.frame(width: 208)
-            Rectangle().fill(Theme.line).frame(width: 1)
+        NavigationSplitView(columnVisibility: columnVisibility) {
+            sidebar
+                .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
+        } detail: {
             VStack(spacing: 0) {
-                topbar
-                HStack(alignment: .top, spacing: 0) {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 26) {
-                            if !model.extensionEnabled { activationBanner }
-                            switch model.section {
-                            case .files: TemplatesView()
-                            case .applications: ApplicationsView()
-                            case .menu: MenuSettingsView()
-                            case .help: HelpView()
-                            }
-                        }
-                        .padding(30)
-                    }
-                    if model.section != .help {
-                        Rectangle().fill(Theme.line).frame(width: 1)
-                        MenuPreview().frame(width: 254).padding(.horizontal, 20).padding(.top, 32)
+                if !model.extensionEnabled { activationBanner }
+                Group {
+                    switch model.section {
+                    case .files: TemplatesView()
+                    case .applications: ApplicationsView()
+                    case .menu: MenuSettingsView()
+                    case .help: HelpView()
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 footer
             }
+            .frame(minWidth: 380)
             .background(Theme.canvas)
+            .navigationTitle(model.section.rawValue)
+            .navigationSubtitle("右键助手")
+            .inspector(isPresented: Binding(get: {
+                model.inspectorVisible && model.section != .help
+            }, set: { if model.section != .help { model.inspectorVisible = $0 } })) {
+                ScrollView {
+                    MenuPreview().padding(20)
+                }
+                .background(Theme.canvas)
+                .inspectorColumnWidth(min: 250, ideal: 270, max: 320)
+            }
         }
-        .foregroundStyle(Theme.ink)
-        .alert("操作未完成", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
+        .navigationSplitViewStyle(.balanced)
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                if model.section == .files {
+                    Button(action: model.importTemplate) {
+                        Label("导入模板", systemImage: "square.and.arrow.down")
+                    }
+                    .help("从文本文件导入模板（⌘O）")
+                    Button {
+                        model.templateToEdit = FileTemplate(name: "", fileExtension: "txt", iconName: "doc.text")
+                    } label: {
+                        Label("添加模板", systemImage: "plus")
+                    }
+                    .help("添加文件模板（⌘N）")
+                } else if model.section == .applications {
+                    Button(action: model.addApplications) {
+                        Label("添加应用", systemImage: "plus")
+                    }
+                    .help("添加打开文件的应用")
+                }
+                if model.section != .help {
+                    Button { model.inspectorVisible.toggle() } label: {
+                        Label("菜单预览", systemImage: "sidebar.right")
+                    }
+                    .help(model.inspectorVisible ? "隐藏菜单预览" : "显示菜单预览")
+                }
+            }
+        }
+        .alert("操作未完成", isPresented: Binding(get: { model.errorMessage != nil }, set: {
+            if !$0 { model.errorMessage = nil }
+        })) {
             Button("好", role: .cancel) { model.errorMessage = nil }
         } message: { Text(model.errorMessage ?? "") }
     }
 
     private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
-                Image(systemName: "cursorarrow.click.2")
-                    .font(.system(size: 23, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 44, height: 44)
-                    .background(Theme.accent.gradient, in: RoundedRectangle(cornerRadius: 13))
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("右键助手").font(.system(size: 18, weight: .bold))
-                    Text("FINDER, SIMPLIFIED").font(.system(size: 7.5, weight: .semibold)).tracking(0.5).foregroundStyle(Theme.muted)
+        VStack(spacing: 0) {
+            List(selection: selection) {
+                Section("工作空间") {
+                    navigationRow(.files, count: model.settings.templates.filter(\.isEnabled).count)
+                    navigationRow(.applications, count: model.settings.applications.filter(\.isEnabled).count)
+                    navigationRow(.menu)
+                }
+                Section("帮助") {
+                    navigationRow(.help)
                 }
             }
-            .padding(.top, 49).padding(.bottom, 39).padding(.horizontal, 21)
-
-            Text("工作空间").font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.muted).padding(.leading, 26).padding(.bottom, 12)
-            ForEach([AppSection.files, .applications, .menu]) { section in
-                navigationRow(section)
+            .listStyle(.sidebar)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                HStack(spacing: 8) {
+                    Image(nsImage: NSImage(named: NSImage.applicationIconName) ?? NSImage())
+                        .resizable().frame(width: 28, height: 28)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("右键助手").font(.system(size: 13, weight: .semibold))
+                        Text("Finder 扩展").font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 16).padding(.vertical, 14)
             }
-            Spacer()
-            navigationRow(.help)
+            Divider()
             VStack(alignment: .leading, spacing: 9) {
-                HStack(spacing: 7) {
-                    Circle().fill(model.extensionEnabled ? Theme.green : Theme.accent).frame(width: 6, height: 6)
-                    Text(model.extensionEnabled ? "Finder 扩展已启用" : "Finder 扩展待启用")
-                        .font(.system(size: 11, weight: .medium))
+                Button(action: model.showExtensionSettings) {
+                    HStack(spacing: 6) {
+                        Circle().fill(model.extensionEnabled ? Theme.green : .orange).frame(width: 6, height: 6)
+                        Text(model.extensionEnabled ? "Finder 扩展已启用" : "启用 Finder 扩展…")
+                            .font(.system(size: 11))
+                        Spacer(minLength: 0)
+                        Image(systemName: "arrow.up.forward").font(.system(size: 9))
+                    }
+                    .contentShape(Rectangle())
                 }
-                Text("右键的小事，交给助手。").font(.system(size: 10)).foregroundStyle(Theme.muted)
-            }
-            .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-            .background(.white.opacity(0.68), in: RoundedRectangle(cornerRadius: 10))
-            .padding(16)
-            HStack {
+                .buttonStyle(.plain)
+                .help("在系统设置中管理 Finder 扩展")
                 Text("版本 \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.5")")
-                Spacer()
-                Text("为 macOS 而造")
-            }.font(.system(size: 9)).foregroundStyle(Theme.muted).padding(.horizontal, 23).padding(.bottom, 20)
-        }
-        .background(Color(red: 0.946, green: 0.939, blue: 0.920))
-    }
-
-    private func navigationRow(_ section: AppSection) -> some View {
-        Button { withAnimation(.easeInOut(duration: 0.15)) { model.section = section } } label: {
-            HStack(spacing: 11) {
-                Image(systemName: section.icon).font(.system(size: 15)).frame(width: 20)
-                Text(section.rawValue).font(.system(size: 13, weight: model.section == section ? .semibold : .regular))
-                Spacer()
-                if section == .files {
-                    Text("\(model.settings.templates.filter(\.isEnabled).count)")
-                        .font(.system(size: 10, weight: .medium)).foregroundStyle(model.section == section ? Theme.accent : Theme.muted)
-                }
+                    .font(.system(size: 10)).foregroundStyle(.tertiary)
             }
-            .padding(.horizontal, 12).frame(height: 42)
-            .foregroundStyle(model.section == section ? Theme.accent : Theme.ink.opacity(0.76))
-            .background(model.section == section ? Color.white : .clear, in: RoundedRectangle(cornerRadius: 8))
-            .contentShape(Rectangle())
+            .padding(16)
         }
-        .buttonStyle(.plain).padding(.horizontal, 13).padding(.bottom, 5)
     }
 
-    private var topbar: some View {
-        HStack(spacing: 7) {
-            Image(systemName: "house").font(.system(size: 11))
-            Text("工作空间")
-            Image(systemName: "chevron.right").font(.system(size: 8, weight: .semibold)).padding(.horizontal, 4)
-            Text(model.section.rawValue).foregroundStyle(Theme.ink)
-            Spacer()
-            Image(systemName: "checkmark.shield").font(.system(size: 11))
-            Text("本地运行 · 无需联网").font(.system(size: 10))
+    private func navigationRow(_ section: AppSection, count: Int? = nil) -> some View {
+        HStack {
+            Label(section.rawValue, systemImage: section.icon)
+            Spacer(minLength: 0)
+            if let count, count > 0 {
+                Text(count, format: .number).font(.system(size: 11)).foregroundStyle(.secondary)
+            }
         }
-        .font(.system(size: 11)).foregroundStyle(Theme.muted)
-        .padding(.horizontal, 30).frame(height: 61)
-        .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
+        .tag(section)
     }
 
     private var activationBanner: some View {
-        HStack(alignment: .center, spacing: 11) {
-            Image(systemName: "puzzlepiece.extension").font(.system(size: 20)).foregroundStyle(Theme.accent)
-            VStack(alignment: .leading, spacing: 4) {
-                Text("再一步，让右键更顺手").font(.system(size: 12, weight: .semibold))
-                Text("在系统设置中开启 Finder 扩展。").font(.system(size: 10)).foregroundStyle(Theme.muted)
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Image(systemName: "puzzlepiece.extension").foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("启用 Finder 扩展").font(.system(size: 12, weight: .medium))
+                    Text("在系统设置中开启，即可使用右键菜单。").font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                Button("打开设置…", action: model.showExtensionSettings).controlSize(.small)
             }
-            Spacer(minLength: 4)
-            Button("去开启", action: model.showExtensionSettings).buttonStyle(.plain)
-                .font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.accent)
+            .padding(.horizontal, 20).padding(.vertical, 12)
+            Divider()
         }
-        .padding(14).background(Theme.accent.opacity(0.065), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.accent.opacity(0.12)))
     }
 
     private var footer: some View {
-        HStack(spacing: 6) {
-            Image(systemName: model.notice == nil ? "arrow.triangle.2.circlepath" : "checkmark.circle.fill")
-                .foregroundStyle(model.notice == nil ? Theme.muted : Theme.green)
-            Text(model.notice ?? "设置自动保存，菜单随你而变")
-            Spacer()
-            Text("⌘ ,  菜单设置")
+        VStack(spacing: 0) {
+            Divider()
+            HStack(spacing: 6) {
+                Image(systemName: model.notice == nil ? "checkmark.circle" : "checkmark.circle.fill")
+                    .foregroundStyle(model.notice == nil ? Theme.muted : Theme.green)
+                Text(model.notice ?? "所有更改自动保存")
+                    .lineLimit(1).truncationMode(.middle)
+                Spacer(minLength: 8)
+                Image(systemName: "lock.shield").help("本地运行，无需联网")
+            }
+            .font(.system(size: 11)).foregroundStyle(.secondary)
+            .padding(.horizontal, 20).frame(height: 30)
         }
-        .font(.system(size: 10)).foregroundStyle(Theme.muted)
-        .padding(.horizontal, 30).frame(height: 37)
-        .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 }
 
 struct PageHeading: View {
     var title: String
     var subtitle: String
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Text(title).font(.system(size: 27, weight: .bold))
-            Text(subtitle).font(.system(size: 12)).foregroundStyle(Theme.muted).lineSpacing(4)
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.system(size: 20, weight: .semibold))
+            Text(subtitle).font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
 }
@@ -178,102 +207,154 @@ struct AccentButton: View {
     let title: String
     let icon: String
     let action: () -> Void
+
     var body: some View {
-        Button(action: action) {
-            Label(title, systemImage: icon).font(.system(size: 11, weight: .semibold))
-                .padding(.horizontal, 13).frame(height: 33)
-                .foregroundStyle(.white).background(Theme.accent, in: RoundedRectangle(cornerRadius: 7))
-        }.buttonStyle(.plain)
+        Button(action: action) { Label(title, systemImage: icon) }
+            .buttonStyle(.borderedProminent)
     }
 }
 
 struct TemplatesView: View {
     @EnvironmentObject private var model: AppModel
     @State private var search = ""
-    @State private var editing: FileTemplate?
+    @State private var selectedID: FileTemplate.ID?
     @State private var deleting: FileTemplate?
+    @FocusState private var searchFocused: Bool
 
     private var filtered: [FileTemplate] {
-        model.settings.templates.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) || $0.fileExtension.localizedCaseInsensitiveContains(search) }
+        model.settings.templates.filter {
+            search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) || $0.fileExtension.localizedCaseInsensitiveContains(search)
+        }
+    }
+
+    private var selectedTemplate: FileTemplate? {
+        filtered.first { $0.id == selectedID }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            PageHeading(title: "从一个新文件开始。", subtitle: "告别先打开应用再保存。在 Finder 里，右键即刻创建。")
-            HStack(spacing: 8) {
-                AccentButton(title: "添加模板", icon: "plus") {
-                    editing = FileTemplate(name: "", fileExtension: "txt", content: "", iconName: "doc.text")
-                }
-                Button(action: model.importTemplate) { Label("导入文件", systemImage: "square.and.arrow.down").font(.system(size: 11)) }
-                    .buttonStyle(.bordered).controlSize(.large)
-                Spacer(minLength: 0)
-            }
-            VStack(spacing: 14) {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 18) {
+                PageHeading(title: "文件模板", subtitle: "管理 Finder 右键菜单中的新建文件类型。")
                 HStack {
-                    Text("文件模板").font(.system(size: 13, weight: .semibold))
-                    Text("\(model.settings.templates.count)").font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.muted)
-                        .padding(.horizontal, 7).padding(.vertical, 3).background(.black.opacity(0.04), in: Capsule())
-                    Spacer()
-                    HStack(spacing: 5) {
-                        Image(systemName: "magnifyingglass").font(.system(size: 10))
-                        TextField("搜索模板", text: $search).textFieldStyle(.plain).font(.system(size: 11)).frame(width: 95)
-                    }.foregroundStyle(Theme.muted)
-                }
-                if filtered.isEmpty {
-                    ContentUnavailableView(search.isEmpty ? "创建你的第一个模板" : "没有找到模板", systemImage: "doc.text.magnifyingglass", description: Text(search.isEmpty ? "添加空白模板，或从文本文件导入。" : "试试其他名称或扩展名。"))
-                        .frame(minHeight: 170)
-                } else {
-                    VStack(spacing: 10) {
-                        ForEach(filtered) { template in templateRow(template) }
-                    }
+                    Text("\(model.settings.templates.count) 个模板 · \(model.settings.templates.filter(\.isEnabled).count) 个已启用")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                    Spacer(minLength: 8)
+                    searchField
                 }
             }
-            HStack(alignment: .top, spacing: 9) {
-                Image(systemName: "lightbulb").foregroundStyle(Theme.accent)
-                Text("不只是空白文件。为模板加入常用内容，下次创建时便能直接开始。")
-                    .lineSpacing(4).foregroundStyle(Theme.muted)
-            }.font(.system(size: 11)).padding(.top, 2)
+            .padding(20)
+            Divider()
+            if filtered.isEmpty {
+                ContentUnavailableView(search.isEmpty ? "尚无文件模板" : "没有找到模板", systemImage: "doc.text.magnifyingglass", description: Text(search.isEmpty ? "点击工具栏中的加号，或导入文本文件。" : "试试其他名称或扩展名。"))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                templateTable
+            }
+            Divider()
+            HStack(spacing: 8) {
+                Button {
+                    if let template = selectedTemplate { model.chooseDirectoryAndCreate(template) }
+                } label: { Label("新建文件…", systemImage: "doc.badge.plus") }
+                .disabled(selectedTemplate == nil)
+                Button("编辑…") { model.templateToEdit = selectedTemplate }
+                    .disabled(selectedTemplate == nil)
+                Spacer(minLength: 0)
+                Text("双击模板以编辑").font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+            .controlSize(.small).padding(.horizontal, 20).padding(.vertical, 10)
         }
-        .sheet(item: $editing) { template in TemplateEditor(template: template) { model.saveTemplate($0) } }
+        .background(Theme.surface)
+        .sheet(item: $model.templateToEdit) { template in
+            TemplateEditor(template: template) { model.saveTemplate($0) }
+        }
         .confirmationDialog("删除「\(deleting?.name ?? "")」模板？", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
             Button("删除模板", role: .destructive) {
                 if let deleting { model.settings.templates.removeAll { $0.id == deleting.id } }
                 deleting = nil
             }
         } message: { Text("已创建的文件不会受到影响。") }
+        .onChange(of: search) { _, _ in
+            if !filtered.contains(where: { $0.id == selectedID }) { selectedID = nil }
+        }
+        .background {
+            Button("搜索模板") { searchFocused = true }
+                .keyboardShortcut("f").hidden()
+        }
     }
 
-    private func templateRow(_ template: FileTemplate) -> some View {
-        HStack(spacing: 13) {
-            FileBadge(template: template)
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 7) {
-                    Text(template.name).font(.system(size: 12, weight: .semibold))
-                    Text(".\(template.fileExtension)").font(.system(size: 9, design: .monospaced)).foregroundStyle(Theme.muted)
-                }
-                Text(template.content.isEmpty ? "空白文件，更多可能" : "包含预设内容，开箱即用")
-                    .font(.system(size: 10)).foregroundStyle(Theme.muted)
+    private var searchField: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            TextField("搜索模板", text: $search)
+                .textFieldStyle(.plain).focused($searchFocused)
+                .accessibilityLabel("搜索模板")
+            if !search.isEmpty {
+                Button { search = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
+                    .buttonStyle(.plain).accessibilityLabel("清除搜索")
             }
-            Spacer(minLength: 2)
-            Button { model.chooseDirectoryAndCreate(template) } label: { Image(systemName: "doc.badge.plus") }
-                .buttonStyle(.plain).foregroundStyle(Theme.muted).help("选择文件夹并创建文件")
-            Menu {
-                Button("编辑模板") { editing = template }
-                Button("上移") { move(template, by: -1) }.disabled(model.settings.templates.first?.id == template.id)
-                Button("下移") { move(template, by: 1) }.disabled(model.settings.templates.last?.id == template.id)
-                Divider()
-                Button("删除模板", role: .destructive) { deleting = template }
-            } label: { Image(systemName: "ellipsis").frame(width: 18) }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().foregroundStyle(Theme.muted)
-            Toggle("启用\(template.name)", isOn: Binding(get: {
-                model.settings.templates.first(where: { $0.id == template.id })?.isEnabled ?? false
-            }, set: { value in
-                if let index = model.settings.templates.firstIndex(where: { $0.id == template.id }) { model.settings.templates[index].isEnabled = value }
-            })).labelsHidden().toggleStyle(.switch).controlSize(.mini).padding(.leading, 3)
         }
-        .padding(.horizontal, 16).padding(.vertical, 14)
-        .background(.white, in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.line))
+        .font(.system(size: 12)).padding(.horizontal, 7).padding(.vertical, 5)
+        .background(Theme.canvas, in: RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.line))
+        .frame(width: 160)
+    }
+
+    private var templateTable: some View {
+        Table(filtered, selection: $selectedID) {
+            TableColumn("模板名称") { template in
+                HStack(spacing: 9) {
+                    FileBadge(template: template)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(template.name).font(.system(size: 13)).lineLimit(1)
+                        Text(template.content.isEmpty ? "空白文件" : "包含预设内容")
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 7)
+            }.width(min: 140, ideal: 220)
+            TableColumn("类型") { template in
+                Text(".\(template.fileExtension)").font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
+            }.width(55)
+            TableColumn("启用") { template in
+                Toggle("启用\(template.name)", isOn: enabledBinding(for: template))
+                    .labelsHidden().toggleStyle(.switch).controlSize(.mini)
+            }.width(48)
+            TableColumn("") { template in
+                Menu { templateActions(template) } label: {
+                    Image(systemName: "ellipsis").frame(width: 22, height: 22)
+                }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                .help("\(template.name)的更多操作")
+                .accessibilityLabel("\(template.name)的更多操作")
+            }.width(28)
+        }
+        .tableStyle(.inset(alternatesRowBackgrounds: true))
+        .contextMenu(forSelectionType: String.self) { ids in
+            if let template = filtered.first(where: { ids.contains($0.id) }) {
+                templateActions(template)
+            }
+        } primaryAction: { ids in
+            model.templateToEdit = filtered.first { ids.contains($0.id) }
+        }
+    }
+
+    @ViewBuilder
+    private func templateActions(_ template: FileTemplate) -> some View {
+        Button("新建文件…") { model.chooseDirectoryAndCreate(template) }
+        Button("编辑模板…") { model.templateToEdit = template }
+        Divider()
+        Button("上移") { move(template, by: -1) }.disabled(model.settings.templates.first?.id == template.id)
+        Button("下移") { move(template, by: 1) }.disabled(model.settings.templates.last?.id == template.id)
+        Divider()
+        Button("删除模板…", role: .destructive) { deleting = template }
+    }
+
+    private func enabledBinding(for template: FileTemplate) -> Binding<Bool> {
+        Binding(get: { model.settings.templates.first { $0.id == template.id }?.isEnabled ?? false }, set: { value in
+            if let index = model.settings.templates.firstIndex(where: { $0.id == template.id }) {
+                model.settings.templates[index].isEnabled = value
+            }
+        })
     }
 
     private func move(_ template: FileTemplate, by offset: Int) {
@@ -286,11 +367,13 @@ struct TemplatesView: View {
 
 struct FileBadge: View {
     let template: FileTemplate
+
     var body: some View {
-        Image(systemName: template.iconName).font(.system(size: 20, weight: .regular))
+        Image(systemName: template.iconName)
+            .font(.system(size: 21, weight: .regular))
             .foregroundStyle(Theme.color(for: template.fileExtension))
-            .frame(width: 42, height: 46)
-            .background(Theme.color(for: template.fileExtension).opacity(0.085), in: RoundedRectangle(cornerRadius: 8))
+            .frame(width: 28, height: 30)
+            .accessibilityHidden(true)
     }
 }
 
@@ -298,6 +381,7 @@ struct TemplateEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State var template: FileTemplate
     var onSave: (FileTemplate) -> Void
+
     private var valid: Bool {
         !template.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         !template.fileExtension.isEmpty &&
@@ -305,43 +389,39 @@ struct TemplateEditor: View {
         !template.fileExtension.contains("..") && !template.fileExtension.hasSuffix(".") &&
         template.content.utf8.count <= 1_048_576
     }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            HStack {
-                Text(template.name.isEmpty ? "添加文件模板" : "编辑文件模板").font(.system(size: 21, weight: .bold))
-                Spacer()
-                Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary) }.buttonStyle(.plain)
+            Text(template.name.isEmpty ? "添加文件模板" : "编辑文件模板")
+                .font(.system(size: 17, weight: .semibold))
+            Form {
+                TextField("模板名称：", text: $template.name, prompt: Text("例如：会议记录"))
+                TextField("扩展名：", text: $template.fileExtension, prompt: Text("md"))
+                Toggle("显示在右键菜单", isOn: $template.isEnabled)
             }
-            HStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("模板名称").font(.system(size: 11, weight: .medium))
-                    TextField("例如：会议记录", text: $template.name).textFieldStyle(.roundedBorder)
-                }
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("扩展名（不含点）").font(.system(size: 11, weight: .medium))
-                    TextField("md", text: $template.fileExtension).textFieldStyle(.roundedBorder)
-                }.frame(width: 150)
-            }
+            .textFieldStyle(.roundedBorder)
             VStack(alignment: .leading, spacing: 8) {
-                Text("预设内容").font(.system(size: 11, weight: .medium))
-                TextEditor(text: $template.content).font(.system(size: 12, design: .monospaced))
-                    .padding(8).frame(height: 205)
-                    .background(.white, in: RoundedRectangle(cornerRadius: 8))
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.line))
-                Text("支持 {{date}} 日期、{{datetime}} 时间与 {{filename}} 文件名；留空即创建空白文件。")
-                    .font(.system(size: 10)).foregroundStyle(Theme.muted).lineSpacing(4)
+                Text("预设内容").font(.system(size: 12, weight: .medium))
+                TextEditor(text: $template.content)
+                    .font(.system(size: 12, design: .monospaced))
+                    .padding(6).frame(height: 210)
+                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: 6))
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.line))
+                    .accessibilityLabel("模板预设内容")
+                Text("可用变量：{{date}} 日期、{{datetime}} 时间、{{filename}} 文件名。留空可创建空白文件。")
+                    .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             HStack {
-                Toggle("显示在右键菜单", isOn: $template.isEnabled).font(.system(size: 11))
                 Spacer()
                 Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("保存模板") {
+                Button("保存") {
                     template.name = template.name.trimmingCharacters(in: .whitespacesAndNewlines)
                     onSave(template)
                     dismiss()
-                }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction).disabled(!valid)
+                }
+                .keyboardShortcut(.defaultAction).disabled(!valid)
             }
         }
-        .padding(28).frame(width: 540).background(Theme.canvas).tint(Theme.accent)
+        .padding(24).frame(width: 500).background(Theme.canvas)
     }
 }
