@@ -140,7 +140,7 @@ struct ContentView: View {
                 }
                 .buttonStyle(.plain)
                 .help("在系统设置中管理 Finder 扩展")
-                Text("版本 \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.5")")
+                Text("版本 \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.6")")
                     .font(.system(size: 10)).foregroundStyle(.tertiary)
             }
             .padding(16)
